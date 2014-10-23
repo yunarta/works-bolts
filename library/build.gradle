@@ -9,7 +9,7 @@ group 'com.mobilesolutionworks'
 version '1.0.3'
 
 android {
-    compileSdkVersion 19
+    compileSdkVersion 20
     buildToolsVersion '20.0.0'
 
     def androidTargetSdkVersion = compileSdkVersion
