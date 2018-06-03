@@ -1,0 +1,233 @@
+import java.util.logging.Level
+
+apply plugin: "maven"
+apply plugin: "maven-publish"
+
+def publishOpts = [
+        "kotlin"            : false,
+        "android"           : "false",
+        "androidProject"    : false,
+        "androidApplication": false,
+        "androidLibrary"    : false,
+        "doc"               : "javadoc",
+        "includeTest"       : false,
+]
+
+if (plugins.hasPlugin("kotlin-android")) {
+    if (pluginManager.findPlugin("org.jetbrains.dokka-android")) {
+        apply plugin: "org.jetbrains.dokka-android"
+        publishOpts.kotlin = true
+    } else {
+        logger.log(LogLevel.WARN, """Found kotlin project, but plugin org.jetbrains.dokka-android cannot be applied
+                                    |Check https://github.com/Kotlin/dokka for installation""".stripMargin("|"))
+    }
+}
+
+if (plugins.hasPlugin("kotlin")) {
+    if (pluginManager.findPlugin("org.jetbrains.dokka")) {
+        apply plugin: "org.jetbrains.dokka"
+        publishOpts.kotlin = true
+    } else {
+        logger.log(LogLevel.WARN, """Found kotlin project, but plugin org.jetbrains.dokka-android cannot be applied
+                                    |Check https://github.com/Kotlin/dokka for installation""".stripMargin("|"))
+    }
+}
+
+if (plugins.hasPlugin("com.android.application")) {
+    publishOpts.androidLibrary = true
+    publishOpts.androidProject = true
+    publishOpts.android = "Android Application"
+}
+
+if (plugins.hasPlugin("com.android.library")) {
+    publishOpts.androidApplication = true
+    publishOpts.androidProject = true
+    publishOpts.android = "Android Library"
+}
+
+if (ext.has("doc")) {
+    publishOpts.doc = ext.doc
+}
+
+if (ext.has("includeTest")) {
+    publishOpts.includeTest = ext.includeTest
+}
+
+logger.quiet("""Publish Options
+               |===============
+               |Project = ${publishOpts.androidProject ? publishOpts.android : "java"}
+               |Kotlin  = ${publishOpts.kotlin}
+               |Docs    = ${publishOpts.doc}
+               |Test    = ${publishOpts.includeTest ? "included" : "excluded"}
+""".stripMargin("|"))
+
+if (publishOpts.doc == "kotlin") {
+    if (publishOpts.kotlin) {
+        task archiveDocumentation(type: Jar, dependsOn: dokka) {
+            classifier = "javadoc"
+            from dokka.outputDirectory
+        }
+    } else {
+        task archiveDocumentation(type: Jar) {
+            classifier = "javadoc"
+        }
+    }
+} else {
+    task generateJavadoc(type: Javadoc) {
+        exclude "**/*.kt"
+        source = android.sourceSets.main.java.srcDirs
+
+        options.addStringOption("Xdoclint:none", "-quiet")
+        classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+    }
+
+    afterEvaluate {
+        generateJavadoc.classpath += files(android.libraryVariants.collect { variant ->
+            variant.javaCompile.classpath.files
+        })
+    }
+
+    task archiveDocumentation(type: Jar, dependsOn: generateJavadoc) {
+        classifier = "generateJavadoc"
+        from generateJavadoc.destinationDir
+    }
+}
+
+
+if (publishOpts.androidProject) {
+    task archiveSources(type: Jar) {
+        from android.sourceSets.main.java.srcDirs
+        classifier = "sources"
+    }
+
+    android {
+        libraryVariants.all { variant ->
+            variant.outputs.all { output ->
+                if (outputFile != null && outputFileName.endsWith(".aar")) {
+                    outputFileName = "${archivesBaseName}-${version}.aar"
+                }
+            }
+        }
+    }
+
+    task generateAssembly(type: Copy, dependsOn: "assembleRelease") {
+        from("$buildDir/outputs/aar") {
+        }
+
+        into "$buildDir/libs"
+    }
+} else {
+    task archiveSources(type: Jar) {
+        from sourceSets.main.java.srcDirs
+        classifier = "sources"
+    }
+
+    task generateAssembly(dependsOn: assemble) {
+
+    }
+}
+
+publishing {
+    publications {
+        projectRelease(MavenPublication) {
+            artifactId project.name
+            version = project.version
+
+            if (publishOpts.androidProject) {
+                artifact "${project.buildDir}/libs/${project.name}-${project.version}.aar"
+            } else {
+                artifact "${project.buildDir}/libs/${project.name}-${project.version}.jar"
+            }
+
+            pom.withXml {
+                def root = asNode()
+                def license = root.appendNode("licenses").appendNode("license")
+                license.appendNode("name", "The Apache Software License, Version 2.0")
+                license.appendNode("url", "http://www.apache.org/licenses/LICENSE-2.0.txt")
+                license.appendNode("distribution", "repo")
+
+                def dependenciesNode = asNode().appendNode("dependencies")
+                def dependencies = [:]
+
+                if (publishOpts.includeTest) {
+                    configurations.testImplementation.allDependencies.each {
+                        def key = "${it.group}:${it.name}:${it.version}"
+                        dependencies[key] = [
+                                "group"   : it.group,
+                                "artifact": it.name,
+                                "version" : it.version,
+                                "scope"   : "test"
+                        ]
+                    }
+                }
+
+                configurations.implementation.allDependencies.each {
+                    def key = "${it.group}:${it.name}:${it.version}"
+                    dependencies[key] = [
+                            "group"  : it.group,
+                            "name"   : it.name,
+                            "version": it.version,
+                            "scope"  : "runtime"
+                    ]
+                }
+
+                configurations.api.allDependencies.each {
+                    def key = "${it.group}:${it.name}:${it.version}"
+                    dependencies[key] = [
+                            "group"   : it.group,
+                            "artifact": it.name,
+                            "version" : it.version,
+                            "scope"   : "compile"
+                    ]
+                }
+
+                configurations.compileOnly.allDependencies.each {
+                    def key = "${it.group}:${it.name}:${it.version}"
+                    dependencies[key] = [
+                            "group"   : it.group,
+                            "artifact": it.name,
+                            "version" : it.version,
+                            "scope"   : "provided"
+                    ]
+                }
+
+                logger.quiet("""Project Object Model
+                               |====================
+                               |${group}:${artifactId}:${version}
+                               |Deps""".stripMargin("|"))
+                dependencies.values().each {
+                    logger.quiet("""  ${it.scope}: ${it.group}:${it.name}:${it.version}""")
+
+                    def dependencyNode = dependenciesNode.appendNode("dependency")
+                    dependencyNode.appendNode("groupId", it.group)
+                    dependencyNode.appendNode("artifactId", it.name)
+                    dependencyNode.appendNode("version", it.version)
+                    dependencyNode.appendNode("scope", it.scope)
+                }
+                logger.quiet("")
+            }
+        }
+    }
+}
+
+task generatePom(type: Copy, dependsOn: "generatePomFileForProjectReleasePublication") {
+    from("$buildDir/publications/projectRelease") {
+    }
+
+    into "$buildDir/libs/"
+    rename "(.*)-(.*).xml", "${project.name}-${version}.pom"
+}
+
+task generatePublication(dependsOn: ["generateAssembly", "archiveSources", "archiveDocumentation", "generatePom"]) {
+    group = "publishing"
+}
+
+artifacts {
+    archives archiveDocumentation
+    archives archiveSources
+}
+
+configurations {
+    provided
+    implementation.extendsFrom provided
+}

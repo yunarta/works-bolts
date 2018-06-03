@@ -4,6 +4,8 @@ apply plugin: "kotlin-android"
 group "com.mobilesolutionworks"
 version "2.0.0"
 
+ext.doc = "kotlin"
+
 android {
     compileSdkVersion 27
 
@@ -12,7 +14,7 @@ android {
         targetSdkVersion 27
 
         versionCode 3
-        versionName "1.0.4"
+        versionName "2.0.0"
     }
 
     sourceSets {
@@ -34,9 +36,16 @@ android {
 
 dependencies {
     testImplementation "junit:junit:4.12"
-    
+
     api "com.parse.bolts:bolts-android:1.4.0"
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+}
+
+
+if (new File("${rootDir.absolutePath}/scripts/publishing.gradle").exists()) {
+    apply from: "${rootDir.absolutePath}/scripts/publishing.gradle"
+} else {
+    apply from: "https://gist.githubusercontent.com/yunarta/b8d2b93c00f798f113f1ddc5d059652f/raw/32c160d08b6bcef95279ba9fb35022758b886d9b/publishing.gradle"
 }
 
 //def generatePom() {
