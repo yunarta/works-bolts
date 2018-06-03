@@ -1,5 +1,5 @@
+rootProject.name = "Works Bolts Project"
+
 include ':works-bolts'
 project(':works-bolts').projectDir = new File('library')
 
-include ':works-bolts-test'
-project(':works-bolts-test').projectDir = new File('sample')
