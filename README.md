@@ -1,4 +1,4 @@
 works-bolts
 ===========
 
-Works Bolts Extensions
+Works Facebook Bolts Extensions
